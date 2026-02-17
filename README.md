@@ -1,5 +1,7 @@
 # Claude Usage Monitor
 
+<img width="376" height="328" alt="image" src="https://github.com/user-attachments/assets/eaa3dc93-b4a1-496d-a7dc-f7e5909d716e" />
+
 A lightweight macOS menu bar app that shows your Claude (claude.ai) usage in real time.
 
 ![macOS](https://img.shields.io/badge/macOS-14.0%2B-blue) ![Swift](https://img.shields.io/badge/Swift-5.9-orange)
