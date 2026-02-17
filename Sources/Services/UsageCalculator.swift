@@ -40,14 +40,14 @@ final class UsageCalculator: ObservableObject {
     }
 
     func recalculate() {
-        guard !isLoading else { return }
+        currentTask?.cancel()
         isLoading = true
         lastError = nil
 
-        currentTask?.cancel()
         currentTask = Task {
             do {
                 let response = try await apiClient.fetchUsage()
+                guard !Task.isCancelled else { return }
 
                 let fiveHour = WindowSummary(
                     percentage: min((response.fiveHour?.utilization ?? 0) / 100.0, 1.0),
@@ -86,6 +86,7 @@ final class UsageCalculator: ObservableObject {
                 )
                 self.isLoading = false
             } catch {
+                guard !Task.isCancelled else { return }
                 self.lastError = error.localizedDescription
                 self.isLoading = false
             }
