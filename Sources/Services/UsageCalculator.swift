@@ -11,6 +11,7 @@ final class UsageCalculator: ObservableObject {
     private var refreshTimer: Timer?
     private var fileWatcher: FileWatcher?
     private var debounceWorkItem: DispatchWorkItem?
+    private var currentTask: Task<Void, Never>?
 
     @Published var refreshInterval: RefreshInterval {
         didSet {
@@ -34,34 +35,34 @@ final class UsageCalculator: ObservableObject {
         refreshTimer = nil
         fileWatcher?.stop()
         fileWatcher = nil
+        currentTask?.cancel()
+        currentTask = nil
     }
 
     func recalculate() {
+        guard !isLoading else { return }
         isLoading = true
         lastError = nil
 
-        Task {
+        currentTask?.cancel()
+        currentTask = Task {
             do {
                 let response = try await apiClient.fetchUsage()
-                let now = Date()
 
                 let fiveHour = WindowSummary(
-                    percentage: (response.fiveHour?.utilization ?? 0) / 100.0,
-                    resetsAt: parseISO8601(response.fiveHour?.resetsAt),
-                    totalMessages: 0
+                    percentage: min((response.fiveHour?.utilization ?? 0) / 100.0, 1.0),
+                    resetsAt: parseISO8601(response.fiveHour?.resetsAt)
                 )
 
                 let weekly = WindowSummary(
-                    percentage: (response.sevenDay?.utilization ?? 0) / 100.0,
-                    resetsAt: parseISO8601(response.sevenDay?.resetsAt),
-                    totalMessages: 0
+                    percentage: min((response.sevenDay?.utilization ?? 0) / 100.0, 1.0),
+                    resetsAt: parseISO8601(response.sevenDay?.resetsAt)
                 )
 
                 let weeklyOpus: WindowSummary? = if let opus = response.sevenDayOpus {
                     WindowSummary(
-                        percentage: opus.utilization / 100.0,
-                        resetsAt: parseISO8601(opus.resetsAt),
-                        totalMessages: 0
+                        percentage: min(opus.utilization / 100.0, 1.0),
+                        resetsAt: parseISO8601(opus.resetsAt)
                     )
                 } else {
                     nil
@@ -69,9 +70,8 @@ final class UsageCalculator: ObservableObject {
 
                 let weeklySonnet: WindowSummary? = if let sonnet = response.sevenDaySonnet {
                     WindowSummary(
-                        percentage: sonnet.utilization / 100.0,
-                        resetsAt: parseISO8601(sonnet.resetsAt),
-                        totalMessages: 0
+                        percentage: min(sonnet.utilization / 100.0, 1.0),
+                        resetsAt: parseISO8601(sonnet.resetsAt)
                     )
                 } else {
                     nil
@@ -82,8 +82,7 @@ final class UsageCalculator: ObservableObject {
                     weekly: weekly,
                     weeklyOpus: weeklyOpus,
                     weeklySonnet: weeklySonnet,
-                    lastUpdated: now,
-                    source: .api
+                    lastUpdated: Date()
                 )
                 self.isLoading = false
             } catch {

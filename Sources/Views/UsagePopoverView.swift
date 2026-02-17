@@ -170,18 +170,9 @@ struct UsagePopoverView: View {
     }
 
     private func footerInfo(_ summary: UsageSummary) -> some View {
-        HStack {
-            Text("Updated: \(summary.lastUpdated.formatted(.dateTime.hour().minute().second()))")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-            Spacer()
-            Text(summary.source.rawValue)
-                .font(.caption2)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(.blue.opacity(0.15))
-                .clipShape(Capsule())
-        }
+        Text("Updated: \(summary.lastUpdated.formatted(.dateTime.hour().minute().second()))")
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
     }
 
     private func colorForPercentage(_ p: Double) -> Color {

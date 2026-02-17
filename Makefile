@@ -1,16 +1,14 @@
 APP_NAME = Claude Usage Monitor
-BUNDLE_ID = com.ClaudeUsageMonitor
-VERSION = 1.0.0
-BUILD_DIR = .build/release
+BUILD_DIR = .build/apple/Products/Release
 APP_BUNDLE = $(BUILD_DIR)/$(APP_NAME).app
 
 .PHONY: build install uninstall clean
 
 build:
-	swift build -c release
+	swift build -c release --arch arm64 --arch x86_64
 	mkdir -p "$(APP_BUNDLE)/Contents/MacOS"
 	mkdir -p "$(APP_BUNDLE)/Contents/Resources"
-	cp $(BUILD_DIR)/ClaudeUsageMonitor "$(APP_BUNDLE)/Contents/MacOS/"
+	cp "$(BUILD_DIR)/ClaudeUsageMonitor" "$(APP_BUNDLE)/Contents/MacOS/"
 	cp Sources/Info.plist "$(APP_BUNDLE)/Contents/"
 	cp Sources/Resources/AppIcon.icns "$(APP_BUNDLE)/Contents/Resources/"
 	codesign --force --deep --sign - "$(APP_BUNDLE)"

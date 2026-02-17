@@ -1,8 +1,7 @@
 import Foundation
 
 final class FileWatcher {
-    private var dirSource: DispatchSourceFileSystemObject?
-    private var subdirSources: [DispatchSourceFileSystemObject] = []
+    private var sources: [DispatchSourceFileSystemObject] = []
     private var fileDescriptors: [Int32] = []
     private let path: String
     private let onChange: () -> Void
@@ -18,15 +17,10 @@ final class FileWatcher {
     }
 
     func stop() {
-        dirSource?.cancel()
-        dirSource = nil
-        for source in subdirSources {
+        for source in sources {
             source.cancel()
         }
-        subdirSources.removeAll()
-        for fd in fileDescriptors {
-            close(fd)
-        }
+        sources.removeAll()
         fileDescriptors.removeAll()
     }
 
@@ -50,7 +44,7 @@ final class FileWatcher {
         }
 
         source.resume()
-        dirSource = source
+        sources.append(source)
     }
 
     private func watchSubdirectories() {
@@ -83,7 +77,7 @@ final class FileWatcher {
             }
 
             source.resume()
-            subdirSources.append(source)
+            sources.append(source)
         }
     }
 

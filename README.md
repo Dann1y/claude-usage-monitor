@@ -25,6 +25,11 @@ make install
 
 The app installs to `/Applications` and appears in your menu bar. Enable **Launch at login** in Settings to keep it running permanently.
 
+> **Note:** Since this app is not notarized with Apple, macOS may show a warning on first launch. Right-click the app and select **Open**, or run:
+> ```bash
+> xattr -cr "/Applications/Claude Usage Monitor.app"
+> ```
+
 ## How It Works
 
 1. Reads your Claude Code OAuth token from the macOS Keychain (`Claude Code-credentials`)

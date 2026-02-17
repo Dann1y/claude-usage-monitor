@@ -3,7 +3,6 @@ import Foundation
 struct WindowSummary {
     let percentage: Double // 0.0 ~ 1.0
     let resetsAt: Date?
-    let totalMessages: Int // from local JSONL (supplementary)
 
     var resetsInFormatted: String? {
         guard let resetsAt = resetsAt else { return nil }
@@ -30,12 +29,6 @@ struct UsageSummary {
     let weeklyOpus: WindowSummary?
     let weeklySonnet: WindowSummary?
     let lastUpdated: Date
-    let source: DataSource
-
-    enum DataSource: String {
-        case api = "API"
-        case local = "Local"
-    }
 }
 
 enum RefreshInterval: Double, CaseIterable, Identifiable {
