@@ -22,7 +22,7 @@ A lightweight macOS menu bar app that shows your Claude (claude.ai) usage in rea
 ## Install & Run
 
 ```bash
-git clone https://github.com/your-username/ClaudeUsageMonitor.git
+git clone https://github.com/Dann1y/claude-usage-monitor.git
 cd ClaudeUsageMonitor
 swift run
 ```
