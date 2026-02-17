@@ -43,7 +43,20 @@ struct SettingsView: View {
                 Text("Usage data is fetched from Anthropic's OAuth API using your Claude Code credentials stored in macOS Keychain.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(4)
+            }
+
+            GroupBox("About") {
+                HStack {
+                    Text("GitHub")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Link("claude-usage-monitor", destination: URL(string: "https://github.com/Dann1y/claude-usage-monitor")!)
+                        .font(.caption)
+                }
+                .padding(4)
             }
 
             HStack {
