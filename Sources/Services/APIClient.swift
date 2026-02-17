@@ -26,8 +26,8 @@ struct UsageAPIResponse: Decodable {
 
 final class APIClient {
     private let usageURL = URL(string: "https://api.anthropic.com/api/oauth/usage")!
-    private let refreshURL = URL(string: "https://console.anthropic.com/v1/oauth/token")!
-    private let clientId = "b8a4d0e0-e773-4ad3-9fdd-a6949e1d9e1c"
+    private let refreshURL = URL(string: "https://platform.claude.com/v1/oauth/token")!
+    private let clientId = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 
     struct OAuthCredentials: Codable {
         var claudeAiOauth: OAuthToken
