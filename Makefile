@@ -12,6 +12,8 @@ build:
 	mkdir -p "$(APP_BUNDLE)/Contents/Resources"
 	cp $(BUILD_DIR)/ClaudeUsageMonitor "$(APP_BUNDLE)/Contents/MacOS/"
 	cp Sources/Info.plist "$(APP_BUNDLE)/Contents/"
+	cp Sources/Resources/AppIcon.icns "$(APP_BUNDLE)/Contents/Resources/"
+	codesign --force --deep --sign - "$(APP_BUNDLE)"
 	@echo "Build complete: $(APP_BUNDLE)"
 
 install: build

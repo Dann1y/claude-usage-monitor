@@ -4,6 +4,8 @@
 <dict>
     <key>LSUIElement</key>
     <true/>
+    <key>CFBundleExecutable</key>
+    <string>ClaudeUsageMonitor</string>
     <key>CFBundleName</key>
     <string>Claude Usage Monitor</string>
     <key>CFBundleIdentifier</key>
@@ -12,5 +14,7 @@
     <string>1.0</string>
     <key>CFBundleShortVersionString</key>
     <string>1.0</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
 </dict>
 </plist>

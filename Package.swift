@@ -10,7 +10,7 @@ let package = Package(
         .executableTarget(
             name: "ClaudeUsageMonitor",
             path: "Sources",
-            exclude: ["Info.plist"]
+            exclude: ["Info.plist", "Resources"]
         )
     ]
 )
