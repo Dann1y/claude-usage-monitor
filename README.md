@@ -8,14 +8,16 @@ A lightweight macOS menu bar app that shows your Claude (claude.ai) usage in rea
 
 ## Install
 
-### Homebrew (Recommended)
+### Step 1. Download
+
+**Homebrew (Recommended)**
 
 ```bash
 brew tap Dann1y/tap
 brew install --cask claude-usage-monitor
 ```
 
-### Manual
+**Or manually**
 
 ```bash
 git clone https://github.com/Dann1y/claude-usage-monitor.git
@@ -23,12 +25,15 @@ cd claude-usage-monitor
 make install
 ```
 
-The app installs to `/Applications` and appears in your menu bar. Enable **Launch at login** in Settings to keep it running permanently.
+### Step 2. Allow app to run
 
-> **Note:** Since this app is not notarized with Apple, macOS may show a warning on first launch. Right-click the app and select **Open**, or run:
-> ```bash
-> xattr -cr "/Applications/Claude Usage Monitor.app"
-> ```
+Since this app is not notarized with Apple, macOS will block it on first launch. Run this once:
+
+```bash
+xattr -cr "/Applications/Claude Usage Monitor.app"
+```
+
+Then open the app. It appears in your menu bar — enable **Launch at login** in Settings to keep it running permanently.
 
 ## How It Works
 
