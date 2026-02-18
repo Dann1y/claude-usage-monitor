@@ -55,7 +55,7 @@ final class APIClient {
     func fetchUsage() async throws -> UsageAPIResponse {
         let token = try await getAccessToken()
 
-        var request = URLRequest(url: usageURL)
+        var request = URLRequest(url: usageURL, cachePolicy: .reloadIgnoringLocalCacheData)
         request.httpMethod = "GET"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
@@ -77,9 +77,9 @@ final class APIClient {
     private func getAccessToken() async throws -> String {
         var credentials = try readCredentials()
 
-        let now = Int64(Date().timeIntervalSince1970)
-        let bufferSeconds: Int64 = 60
-        if credentials.claudeAiOauth.expiresAt - bufferSeconds <= now {
+        let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
+        let bufferMs: Int64 = 60_000
+        if credentials.claudeAiOauth.expiresAt - bufferMs <= nowMs {
             credentials = try await refreshAccessToken(credentials)
         }
 
@@ -133,7 +133,7 @@ final class APIClient {
 
         var updated = credentials
         updated.claudeAiOauth.accessToken = tokenResponse.accessToken
-        updated.claudeAiOauth.expiresAt = Int64(Date().timeIntervalSince1970) + Int64(tokenResponse.expiresIn)
+        updated.claudeAiOauth.expiresAt = Int64(Date().timeIntervalSince1970 * 1000) + Int64(tokenResponse.expiresIn) * 1000
         if let newRefresh = tokenResponse.refreshToken {
             updated.claudeAiOauth.refreshToken = newRefresh
         }
