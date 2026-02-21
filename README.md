@@ -52,6 +52,7 @@ Then open the app. It appears in your menu bar — enable **Launch at login** in
 - Configurable refresh interval (15s / 30s / 1min)
 - Launch at login support
 - Auto-refresh on local Claude file changes
+- Automatic update notifications via GitHub Releases (checks every 24h)
 
 ## Prerequisites
 
@@ -59,6 +60,24 @@ Then open the app. It appears in your menu bar — enable **Launch at login** in
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) — run `claude` at least once to store OAuth credentials in your macOS Keychain
 
 
+
+## Update
+
+The app checks for new versions automatically every 24 hours and shows a notification badge when an update is available.
+
+**Homebrew**
+
+```bash
+brew upgrade claude-usage-monitor
+```
+
+**Or manually**
+
+```bash
+cd claude-usage-monitor
+git pull
+make install
+```
 
 ## Uninstall
 
