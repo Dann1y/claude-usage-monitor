@@ -2,6 +2,7 @@ import SwiftUI
 
 struct UsagePopoverView: View {
     @ObservedObject var calculator: UsageCalculator
+    @ObservedObject var updateChecker: UpdateChecker
     @State private var showSettings = false
 
     var body: some View {
@@ -46,7 +47,22 @@ struct UsagePopoverView: View {
                 Button {
                     calculator.recalculate()
                 } label: {
-                    Label("Refresh", systemImage: "arrow.clockwise")
+                    HStack(spacing: 4) {
+                        if calculator.isLoading {
+                            TimelineView(.animation) { context in
+                                Image(systemName: "arrow.clockwise")
+                                    .rotationEffect(.degrees(
+                                        context.date.timeIntervalSinceReferenceDate
+                                            .truncatingRemainder(dividingBy: 1.0) * 360
+                                    ))
+                            }
+                            .transition(.identity)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                                .transition(.identity)
+                        }
+                        Text("Refresh")
+                    }
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
@@ -63,7 +79,7 @@ struct UsagePopoverView: View {
         .padding(16)
         .frame(width: 320)
         .sheet(isPresented: $showSettings) {
-            SettingsView(calculator: calculator)
+            SettingsView(calculator: calculator, updateChecker: updateChecker)
         }
     }
 
@@ -74,6 +90,20 @@ struct UsagePopoverView: View {
             Text("Claude Usage Monitor")
                 .font(.headline)
             Spacer()
+            if let update = updateChecker.updateAvailable {
+                Button {
+                    NSWorkspace.shared.open(update.url)
+                } label: {
+                    Text("v\(update.version)")
+                        .font(.caption2.bold())
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(.blue, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .help("Update available - click to download")
+            }
         }
     }
 
@@ -170,9 +200,17 @@ struct UsagePopoverView: View {
     }
 
     private func footerInfo(_ summary: UsageSummary) -> some View {
-        Text("Updated: \(summary.lastUpdated.formatted(.dateTime.hour().minute().second()))")
-            .font(.caption2)
-            .foregroundStyle(.tertiary)
+        VStack(alignment: .leading, spacing: 4) {
+            if let error = calculator.lastError {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                    .lineLimit(2)
+            }
+            Text("Updated: \(summary.lastUpdated.formatted(.dateTime.hour().minute().second()))")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
     }
 
     private func colorForPercentage(_ p: Double) -> Color {

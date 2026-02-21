@@ -15,7 +15,7 @@ struct UsageAPIResponse: Decodable {
 
     struct WindowData: Decodable {
         let utilization: Double // 0-100
-        let resetsAt: String // ISO 8601
+        let resetsAt: String? // ISO 8601
 
         enum CodingKeys: String, CodingKey {
             case utilization

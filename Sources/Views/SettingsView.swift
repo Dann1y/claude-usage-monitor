@@ -3,6 +3,7 @@ import ServiceManagement
 
 struct SettingsView: View {
     @ObservedObject var calculator: UsageCalculator
+    @ObservedObject var updateChecker: UpdateChecker
     @Environment(\.dismiss) private var dismiss
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
 
@@ -48,15 +49,39 @@ struct SettingsView: View {
             }
 
             GroupBox("About") {
-                HStack {
-                    Text("GitHub")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Link("claude-usage-monitor", destination: URL(string: "https://github.com/Dann1y/claude-usage-monitor")!)
-                        .font(.caption)
+                VStack(spacing: 6) {
+                    HStack {
+                        Text("Version")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text(updateChecker.currentVersion)
+                            .font(.caption)
+                    }
+                    .padding(4)
+
+                    if let update = updateChecker.updateAvailable {
+                        HStack {
+                            Text("Update available")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Link("v\(update.version)", destination: update.url)
+                                .font(.caption)
+                        }
+                        .padding(4)
+                    }
+
+                    HStack {
+                        Text("GitHub")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Link("claude-usage-monitor", destination: URL(string: "https://github.com/Dann1y/claude-usage-monitor")!)
+                            .font(.caption)
+                    }
+                    .padding(4)
                 }
-                .padding(4)
             }
 
             HStack {
