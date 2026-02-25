@@ -21,6 +21,12 @@ struct UsageAPIResponse: Decodable {
             case utilization
             case resetsAt = "resets_at"
         }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.utilization = try container.decodeIfPresent(Double.self, forKey: .utilization) ?? 0
+            self.resetsAt = try container.decodeIfPresent(String.self, forKey: .resetsAt)
+        }
     }
 }
 

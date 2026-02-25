@@ -85,6 +85,10 @@ final class UsageCalculator: ObservableObject {
                     lastUpdated: Date()
                 )
                 self.isLoading = false
+            } catch let decodingError as DecodingError {
+                guard !Task.isCancelled else { return }
+                self.lastError = UsageCalculator.describeDecodingError(decodingError)
+                self.isLoading = false
             } catch {
                 guard !Task.isCancelled else { return }
                 self.lastError = error.localizedDescription
@@ -100,6 +104,24 @@ final class UsageCalculator: ObservableObject {
         if let date = formatter.date(from: str) { return date }
         formatter.formatOptions = [.withInternetDateTime]
         return formatter.date(from: str)
+    }
+
+    private static func describeDecodingError(_ error: DecodingError) -> String {
+        switch error {
+        case .keyNotFound(let key, _):
+            return "Missing field '\(key.stringValue)' in API response."
+        case .typeMismatch(let type, let context):
+            let path = context.codingPath.map(\.stringValue).joined(separator: ".")
+            return "Type mismatch for '\(path)': expected \(type)."
+        case .valueNotFound(let type, let context):
+            let path = context.codingPath.map(\.stringValue).joined(separator: ".")
+            return "Null value for '\(path)': expected \(type)."
+        case .dataCorrupted(let context):
+            let path = context.codingPath.map(\.stringValue).joined(separator: ".")
+            return "Corrupted data at '\(path)': \(context.debugDescription)"
+        @unknown default:
+            return error.localizedDescription
+        }
     }
 
     private func setupTimer() {
