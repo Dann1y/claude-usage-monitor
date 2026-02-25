@@ -77,7 +77,21 @@ final class APIClient {
             throw APIError.httpError(httpResponse.statusCode)
         }
 
-        return try JSONDecoder().decode(UsageAPIResponse.self, from: data)
+        // Check if response is empty
+        guard !data.isEmpty else {
+            throw APIError.emptyResponse
+        }
+
+        // Try to decode, but provide better error context
+        do {
+            return try JSONDecoder().decode(UsageAPIResponse.self, from: data)
+        } catch {
+            // Log raw response for debugging
+            if let rawString = String(data: data, encoding: .utf8) {
+                print("⚠️ Failed to decode API response. Raw data: \(rawString)")
+            }
+            throw error
+        }
     }
 
     private func getAccessToken() async throws -> String {
@@ -114,7 +128,13 @@ final class APIClient {
             throw APIError.noCredentials
         }
 
-        return try JSONDecoder().decode(OAuthCredentials.self, from: Data(json.utf8))
+        // Try to decode credentials with better error handling
+        do {
+            return try JSONDecoder().decode(OAuthCredentials.self, from: Data(json.utf8))
+        } catch {
+            print("⚠️ Failed to decode credentials from Keychain. Raw data: \(json)")
+            throw APIError.corruptedCredentials
+        }
     }
 
     private func refreshAccessToken(_ credentials: OAuthCredentials) async throws -> OAuthCredentials {
@@ -176,7 +196,9 @@ final class APIClient {
 
     enum APIError: LocalizedError {
         case noCredentials
+        case corruptedCredentials
         case invalidResponse
+        case emptyResponse
         case httpError(Int)
         case tokenRefreshFailed
         case keychainWriteFailed
@@ -185,8 +207,12 @@ final class APIClient {
             switch self {
             case .noCredentials:
                 return "No Claude Code credentials found in Keychain. Run 'claude' in terminal first."
+            case .corruptedCredentials:
+                return "Claude Code credentials are corrupted. Run 'claude' in terminal to re-authenticate."
             case .invalidResponse:
                 return "Invalid response from API."
+            case .emptyResponse:
+                return "API returned empty response. Please try again later."
             case .httpError(401):
                 return "Authentication failed. Run 'claude' in terminal to refresh your credentials."
             case .httpError(403):

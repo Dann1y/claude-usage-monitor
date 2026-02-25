@@ -11,9 +11,9 @@
     <key>CFBundleIdentifier</key>
     <string>com.ClaudeUsageMonitor</string>
     <key>CFBundleVersion</key>
-    <string>1.2.0</string>
+    <string>1.2.1</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.2.0</string>
+    <string>1.2.1</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleIconFile</key>
