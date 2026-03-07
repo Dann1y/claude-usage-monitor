@@ -42,8 +42,13 @@ The app checks for new versions automatically every 24 hours and shows a notific
 **Homebrew**
 
 ```bash
-brew upgrade claude-usage-monitor
+brew upgrade --cask claude-usage-monitor
 ```
+
+> If `brew upgrade` doesn't detect new versions, run this once to fix it:
+> ```bash
+> git -C "$(brew --repository dann1y/tap)" config homebrew.forceautoupdate true
+> ```
 
 **Or manually**
 
@@ -75,7 +80,7 @@ make uninstall
 - 5-hour sliding window utilization
 - 7-day weekly utilization with per-model breakdown (Opus, Sonnet)
 - Reset countdown timers
-- Configurable refresh interval (15s / 30s / 1min)
+- Configurable refresh interval (1min / 2min / 5min)
 - Launch at login support
 - Auto-refresh on local Claude file changes
 - Automatic update notifications via GitHub Releases (checks every 24h)
