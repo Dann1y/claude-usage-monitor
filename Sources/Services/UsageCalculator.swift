@@ -6,6 +6,7 @@ final class UsageCalculator: ObservableObject {
     @Published var summary: UsageSummary?
     @Published var isLoading = false
     @Published var lastError: String?
+    @Published var rateLimitWarning: String?
 
     private let apiClient = APIClient()
     private var refreshTimer: Timer?
@@ -17,7 +18,7 @@ final class UsageCalculator: ObservableObject {
     private var rateLimitBackoffUntil: Date?
     private var consecutiveRateLimits: Int = 0
     private var lastRequestTime: Date?
-    private let minimumRequestInterval: TimeInterval = 10 // seconds between requests
+    private let minimumRequestInterval: TimeInterval = 45 // seconds between requests
 
     @Published var refreshInterval: RefreshInterval {
         didSet {
@@ -28,12 +29,12 @@ final class UsageCalculator: ObservableObject {
 
     init() {
         let stored = UserDefaults.standard.double(forKey: "refreshInterval")
-        // Migrate removed 15s interval to 30s
+        // Migrate removed 15s/30s intervals to 60s
         if let interval = RefreshInterval(rawValue: stored) {
             self.refreshInterval = interval
         } else {
-            self.refreshInterval = .thirty
-            UserDefaults.standard.set(RefreshInterval.thirty.rawValue, forKey: "refreshInterval")
+            self.refreshInterval = .sixty
+            UserDefaults.standard.set(RefreshInterval.sixty.rawValue, forKey: "refreshInterval")
         }
     }
 
@@ -77,6 +78,7 @@ final class UsageCalculator: ObservableObject {
                 // Reset backoff on success
                 self.consecutiveRateLimits = 0
                 self.rateLimitBackoffUntil = nil
+                self.rateLimitWarning = nil
 
                 let fiveHour = WindowSummary(
                     percentage: min((response.fiveHour?.utilization ?? 0) / 100.0, 1.0),
@@ -120,8 +122,14 @@ final class UsageCalculator: ObservableObject {
                 self.isLoading = false
             } catch let apiError as APIClient.APIError {
                 guard !Task.isCancelled else { return }
-                if case .httpError(429) = apiError {
+                if case .rateLimited = apiError {
                     self.handleRateLimit()
+                    // Keep cached summary — only set warning, not lastError
+                    if self.summary != nil {
+                        self.rateLimitWarning = apiError.localizedDescription
+                        self.isLoading = false
+                        return
+                    }
                 }
                 self.lastError = apiError.localizedDescription
                 self.isLoading = false
@@ -188,7 +196,7 @@ final class UsageCalculator: ObservableObject {
                 }
             }
             self?.debounceWorkItem = workItem
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: workItem)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 30, execute: workItem)
         }
         fileWatcher?.start()
     }

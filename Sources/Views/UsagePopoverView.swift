@@ -207,6 +207,12 @@ struct UsagePopoverView: View {
                     .foregroundStyle(.orange)
                     .lineLimit(2)
             }
+            if let warning = calculator.rateLimitWarning {
+                Label(warning, systemImage: "clock.badge.exclamationmark")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
             Text("Updated: \(summary.lastUpdated.formatted(.dateTime.hour().minute().second()))")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)

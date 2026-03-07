@@ -60,7 +60,33 @@ final class APIClient {
 
     func fetchUsage() async throws -> UsageAPIResponse {
         let token = try await getAccessToken()
+        let result = try await performUsageRequest(token: token)
 
+        switch result {
+        case .success(let response):
+            return response
+        case .rateLimited:
+            // Rate limit is per access token — refresh to get a new rate limit window
+            print("⚠️ Rate limited, refreshing token to get new rate limit window...")
+            let credentials = try readCredentials()
+            let refreshed = try await refreshAccessToken(credentials)
+            let retryResult = try await performUsageRequest(token: refreshed.claudeAiOauth.accessToken)
+
+            switch retryResult {
+            case .success(let response):
+                return response
+            case .rateLimited(let retryAfter):
+                throw APIError.rateLimited(retryAfter: retryAfter)
+            }
+        }
+    }
+
+    private enum UsageResult {
+        case success(UsageAPIResponse)
+        case rateLimited(retryAfter: TimeInterval?)
+    }
+
+    private func performUsageRequest(token: String) async throws -> UsageResult {
         var request = URLRequest(url: usageURL, cachePolicy: .reloadIgnoringLocalCacheData)
         request.httpMethod = "GET"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -71,6 +97,12 @@ final class APIClient {
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIError.invalidResponse
+        }
+
+        if httpResponse.statusCode == 429 {
+            let retryAfter = httpResponse.value(forHTTPHeaderField: "retry-after")
+                .flatMap { TimeInterval($0) }
+            return .rateLimited(retryAfter: retryAfter)
         }
 
         guard httpResponse.statusCode == 200 else {
@@ -84,7 +116,8 @@ final class APIClient {
 
         // Try to decode, but provide better error context
         do {
-            return try JSONDecoder().decode(UsageAPIResponse.self, from: data)
+            let decoded = try JSONDecoder().decode(UsageAPIResponse.self, from: data)
+            return .success(decoded)
         } catch {
             // Log raw response for debugging
             if let rawString = String(data: data, encoding: .utf8) {
@@ -200,6 +233,7 @@ final class APIClient {
         case invalidResponse
         case emptyResponse
         case httpError(Int)
+        case rateLimited(retryAfter: TimeInterval?)
         case tokenRefreshFailed
         case keychainWriteFailed
 
@@ -221,6 +255,11 @@ final class APIClient {
                 return "Rate limited. Try again in a moment."
             case .httpError(let code):
                 return "HTTP error \(code). Please try again later."
+            case .rateLimited(let retryAfter):
+                if let seconds = retryAfter, seconds > 0 {
+                    return "Rate limited. Retrying in \(Int(seconds))s."
+                }
+                return "Rate limited. Try again in a moment."
             case .tokenRefreshFailed:
                 return "Failed to refresh token. Run 'claude' in terminal to re-authenticate."
             case .keychainWriteFailed:
