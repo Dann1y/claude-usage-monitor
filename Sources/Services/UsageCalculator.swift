@@ -13,6 +13,12 @@ final class UsageCalculator: ObservableObject {
     private var debounceWorkItem: DispatchWorkItem?
     private var currentTask: Task<Void, Never>?
 
+    // Rate limit backoff
+    private var rateLimitBackoffUntil: Date?
+    private var consecutiveRateLimits: Int = 0
+    private var lastRequestTime: Date?
+    private let minimumRequestInterval: TimeInterval = 10 // seconds between requests
+
     @Published var refreshInterval: RefreshInterval {
         didSet {
             UserDefaults.standard.set(refreshInterval.rawValue, forKey: "refreshInterval")
@@ -21,7 +27,14 @@ final class UsageCalculator: ObservableObject {
     }
 
     init() {
-        self.refreshInterval = RefreshInterval(rawValue: UserDefaults.standard.double(forKey: "refreshInterval")) ?? .thirty
+        let stored = UserDefaults.standard.double(forKey: "refreshInterval")
+        // Migrate removed 15s interval to 30s
+        if let interval = RefreshInterval(rawValue: stored) {
+            self.refreshInterval = interval
+        } else {
+            self.refreshInterval = .thirty
+            UserDefaults.standard.set(RefreshInterval.thirty.rawValue, forKey: "refreshInterval")
+        }
     }
 
     func start() {
@@ -39,15 +52,31 @@ final class UsageCalculator: ObservableObject {
         currentTask = nil
     }
 
-    func recalculate() {
+    func recalculate(force: Bool = false) {
+        // Skip if in backoff period (unless forced by manual refresh)
+        if !force, let backoffUntil = rateLimitBackoffUntil, Date() < backoffUntil {
+            return
+        }
+
+        // Skip if too soon since last request (unless forced)
+        if !force, let lastRequest = lastRequestTime,
+           Date().timeIntervalSince(lastRequest) < minimumRequestInterval {
+            return
+        }
+
         currentTask?.cancel()
         isLoading = true
         lastError = nil
 
         currentTask = Task {
             do {
+                self.lastRequestTime = Date()
                 let response = try await apiClient.fetchUsage()
                 guard !Task.isCancelled else { return }
+
+                // Reset backoff on success
+                self.consecutiveRateLimits = 0
+                self.rateLimitBackoffUntil = nil
 
                 let fiveHour = WindowSummary(
                     percentage: min((response.fiveHour?.utilization ?? 0) / 100.0, 1.0),
@@ -89,12 +118,28 @@ final class UsageCalculator: ObservableObject {
                 guard !Task.isCancelled else { return }
                 self.lastError = UsageCalculator.describeDecodingError(decodingError)
                 self.isLoading = false
+            } catch let apiError as APIClient.APIError {
+                guard !Task.isCancelled else { return }
+                if case .httpError(429) = apiError {
+                    self.handleRateLimit()
+                }
+                self.lastError = apiError.localizedDescription
+                self.isLoading = false
             } catch {
                 guard !Task.isCancelled else { return }
                 self.lastError = error.localizedDescription
                 self.isLoading = false
             }
         }
+    }
+
+    private func handleRateLimit() {
+        consecutiveRateLimits += 1
+        // Exponential backoff: 30s, 60s, 120s, 240s (max ~4 min)
+        let backoffSeconds = min(30.0 * pow(2.0, Double(consecutiveRateLimits - 1)), 240.0)
+        rateLimitBackoffUntil = Date().addingTimeInterval(backoffSeconds)
+        let backoffDisplay = Int(backoffSeconds)
+        self.lastError = "Rate limited. Retrying in \(backoffDisplay)s."
     }
 
     private func parseISO8601(_ str: String?) -> Date? {

@@ -45,7 +45,7 @@ struct UsagePopoverView: View {
                 Spacer()
 
                 Button {
-                    calculator.recalculate()
+                    calculator.recalculate(force: true)
                 } label: {
                     HStack(spacing: 4) {
                         if calculator.isLoading {

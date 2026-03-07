@@ -32,17 +32,17 @@ struct UsageSummary {
 }
 
 enum RefreshInterval: Double, CaseIterable, Identifiable {
-    case fifteen = 15
     case thirty = 30
     case sixty = 60
+    case oneTwenty = 120
 
     var id: Double { rawValue }
 
     var label: String {
         switch self {
-        case .fifteen: return "15 seconds"
         case .thirty: return "30 seconds"
         case .sixty: return "1 minute"
+        case .oneTwenty: return "2 minutes"
         }
     }
 }
