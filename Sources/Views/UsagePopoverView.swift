@@ -82,6 +82,9 @@ struct UsagePopoverView: View {
         }
         .padding(16)
         .frame(width: 320)
+        .onAppear {
+            calculator.recalculate(force: true)
+        }
         .sheet(isPresented: $showSettings) {
             SettingsView(calculator: calculator, updateChecker: updateChecker)
         }
@@ -210,12 +213,6 @@ struct UsagePopoverView: View {
                     .font(.caption2)
                     .foregroundStyle(.orange)
                     .lineLimit(2)
-            }
-            if let warning = calculator.rateLimitWarning {
-                Label(warning, systemImage: "clock.badge.exclamationmark")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
             }
             HStack(spacing: 4) {
                 Text("Updated: \(summary.lastUpdated.formatted(.dateTime.hour().minute().second()))")

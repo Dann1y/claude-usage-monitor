@@ -12,16 +12,6 @@ struct SettingsView: View {
             Text("Settings")
                 .font(.title2.bold())
 
-            // Refresh Interval
-            GroupBox("Refresh") {
-                Picker("Interval", selection: $calculator.refreshInterval) {
-                    ForEach(RefreshInterval.allCases) { interval in
-                        Text(interval.label).tag(interval)
-                    }
-                }
-                .padding(4)
-            }
-
             // Launch at Login
             GroupBox("System") {
                 Toggle("Launch at login", isOn: $launchAtLogin)
@@ -41,7 +31,7 @@ struct SettingsView: View {
 
             // Info
             GroupBox("Data Source") {
-                Text("Usage data is fetched from Anthropic's OAuth API using your Claude Code credentials stored in macOS Keychain.")
+                Text("Usage data is fetched on-demand when the popover opens, with a background refresh every 30 minutes. Credentials are read from macOS Keychain.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

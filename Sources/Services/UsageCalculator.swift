@@ -6,7 +6,6 @@ final class UsageCalculator: ObservableObject {
     @Published var summary: UsageSummary?
     @Published var isLoading = false
     @Published var lastError: String?
-    @Published var rateLimitWarning: String?
     @Published var tokenStatus: TokenStatus?
     @Published var isCachedData = false
 
@@ -26,65 +25,39 @@ final class UsageCalculator: ObservableObject {
 
     private let apiClient = APIClient()
     private var refreshTimer: Timer?
-    private var fileWatcher: FileWatcher?
-    private var debounceWorkItem: DispatchWorkItem?
     private var currentTask: Task<Void, Never>?
 
-    // Rate limit backoff
-    private var rateLimitBackoffUntil: Date?
-    private var consecutiveRateLimits: Int = 0
-    private var lastRequestTime: Date?
-    private let minimumRequestInterval: TimeInterval = 45 // seconds between requests
+    // On-demand protection: skip if last fetch was within 30 seconds
+    private var lastFetchTime: Date?
+    private let onDemandCooldown: TimeInterval = 30
+
+    // Fixed 30-minute background refresh interval
+    private let backgroundInterval: TimeInterval = 30 * 60
 
     // Disk cache keys
     private static let cacheKey = "cachedUsageResponse"
     private static let cacheTimestampKey = "cachedUsageTimestamp"
 
-    @Published var refreshInterval: RefreshInterval {
-        didSet {
-            UserDefaults.standard.set(refreshInterval.rawValue, forKey: "refreshInterval")
-            setupTimer()
-        }
-    }
-
     init() {
-        let stored = UserDefaults.standard.double(forKey: "refreshInterval")
-        // Migrate removed 15s/30s intervals to 60s
-        if let interval = RefreshInterval(rawValue: stored) {
-            self.refreshInterval = interval
-        } else {
-            self.refreshInterval = .sixty
-            UserDefaults.standard.set(RefreshInterval.sixty.rawValue, forKey: "refreshInterval")
-        }
-
-        // Load cached data on init
         loadCachedSummary()
     }
 
     func start() {
         recalculate()
         setupTimer()
-        setupFileWatcher()
     }
 
     func stop() {
         refreshTimer?.invalidate()
         refreshTimer = nil
-        fileWatcher?.stop()
-        fileWatcher = nil
         currentTask?.cancel()
         currentTask = nil
     }
 
     func recalculate(force: Bool = false) {
-        // Skip if in backoff period (unless forced by manual refresh)
-        if !force, let backoffUntil = rateLimitBackoffUntil, Date() < backoffUntil {
-            return
-        }
-
-        // Skip if too soon since last request (unless forced)
-        if !force, let lastRequest = lastRequestTime,
-           Date().timeIntervalSince(lastRequest) < minimumRequestInterval {
+        // On-demand protection: skip if too soon (unless forced by manual refresh button)
+        if !force, let lastFetch = lastFetchTime,
+           Date().timeIntervalSince(lastFetch) < onDemandCooldown {
             return
         }
 
@@ -94,14 +67,10 @@ final class UsageCalculator: ObservableObject {
 
         currentTask = Task {
             do {
-                self.lastRequestTime = Date()
+                self.lastFetchTime = Date()
                 let response = try await apiClient.fetchUsage()
                 guard !Task.isCancelled else { return }
 
-                // Reset backoff on success
-                self.consecutiveRateLimits = 0
-                self.rateLimitBackoffUntil = nil
-                self.rateLimitWarning = nil
                 self.tokenStatus = nil
                 self.isCachedData = false
 
@@ -118,9 +87,8 @@ final class UsageCalculator: ObservableObject {
                 case .httpError(401), .httpError(403):
                     self.handleTokenIssue(.authFailed)
                 case .rateLimited:
-                    self.handleRateLimit()
+                    // With 30-min intervals, just wait for next cycle
                     if self.summary != nil {
-                        self.rateLimitWarning = apiError.localizedDescription
                         self.isLoading = false
                         return
                     }
@@ -143,22 +111,12 @@ final class UsageCalculator: ObservableObject {
 
     private func handleTokenIssue(_ status: TokenStatus) {
         self.tokenStatus = status
-        // Keep existing summary (from memory or disk cache) — don't clear it
         if self.summary != nil {
             self.isCachedData = true
             self.lastError = nil
         } else {
             self.lastError = status.message
         }
-    }
-
-    private func handleRateLimit() {
-        consecutiveRateLimits += 1
-        // Exponential backoff: 30s, 60s, 120s, 240s (max ~4 min)
-        let backoffSeconds = min(30.0 * pow(2.0, Double(consecutiveRateLimits - 1)), 240.0)
-        rateLimitBackoffUntil = Date().addingTimeInterval(backoffSeconds)
-        let backoffDisplay = Int(backoffSeconds)
-        self.lastError = "Rate limited. Retrying in \(backoffDisplay)s."
     }
 
     // MARK: - Summary Building
@@ -268,25 +226,10 @@ final class UsageCalculator: ObservableObject {
 
     private func setupTimer() {
         refreshTimer?.invalidate()
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: refreshInterval.rawValue, repeats: true) { [weak self] _ in
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: backgroundInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.recalculate()
             }
         }
-    }
-
-    private func setupFileWatcher() {
-        fileWatcher?.stop()
-        fileWatcher = FileWatcher { [weak self] in
-            self?.debounceWorkItem?.cancel()
-            let workItem = DispatchWorkItem { [weak self] in
-                Task { @MainActor in
-                    self?.recalculate()
-                }
-            }
-            self?.debounceWorkItem = workItem
-            DispatchQueue.main.asyncAfter(deadline: .now() + 30, execute: workItem)
-        }
-        fileWatcher?.start()
     }
 }

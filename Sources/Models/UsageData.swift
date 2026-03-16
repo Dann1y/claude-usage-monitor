@@ -31,18 +31,3 @@ struct UsageSummary {
     let lastUpdated: Date
 }
 
-enum RefreshInterval: Double, CaseIterable, Identifiable {
-    case sixty = 60
-    case oneTwenty = 120
-    case fiveMinutes = 300
-
-    var id: Double { rawValue }
-
-    var label: String {
-        switch self {
-        case .sixty: return "1 minute"
-        case .oneTwenty: return "2 minutes"
-        case .fiveMinutes: return "5 minutes"
-        }
-    }
-}
