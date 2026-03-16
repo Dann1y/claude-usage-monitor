@@ -10,6 +10,10 @@ struct UsagePopoverView: View {
             header
             Divider()
 
+            if let status = calculator.tokenStatus {
+                tokenStatusBanner(status)
+            }
+
             if let summary = calculator.summary {
                 fiveHourSection(summary.fiveHour)
                 Divider()
@@ -213,10 +217,30 @@ struct UsagePopoverView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
-            Text("Updated: \(summary.lastUpdated.formatted(.dateTime.hour().minute().second()))")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+            HStack(spacing: 4) {
+                Text("Updated: \(summary.lastUpdated.formatted(.dateTime.hour().minute().second()))")
+                if calculator.isCachedData {
+                    Text("(Cached)")
+                        .foregroundStyle(.orange)
+                }
+            }
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
         }
+    }
+
+    private func tokenStatusBanner(_ status: UsageCalculator.TokenStatus) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "key.fill")
+                .font(.caption2)
+            Text(status.message)
+                .font(.caption2)
+        }
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
     }
 
     private func colorForPercentage(_ p: Double) -> Color {

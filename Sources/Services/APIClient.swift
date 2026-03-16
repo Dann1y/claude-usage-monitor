@@ -1,6 +1,6 @@
 import Foundation
 
-struct UsageAPIResponse: Decodable {
+struct UsageAPIResponse: Codable {
     let fiveHour: WindowData?
     let sevenDay: WindowData?
     let sevenDayOpus: WindowData?
@@ -13,7 +13,7 @@ struct UsageAPIResponse: Decodable {
         case sevenDaySonnet = "seven_day_sonnet"
     }
 
-    struct WindowData: Decodable {
+    struct WindowData: Codable {
         let utilization: Double // 0-100
         let resetsAt: String? // ISO 8601
 
@@ -27,13 +27,17 @@ struct UsageAPIResponse: Decodable {
             self.utilization = try container.decodeIfPresent(Double.self, forKey: .utilization) ?? 0
             self.resetsAt = try container.decodeIfPresent(String.self, forKey: .resetsAt)
         }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(utilization, forKey: .utilization)
+            try container.encodeIfPresent(resetsAt, forKey: .resetsAt)
+        }
     }
 }
 
 final class APIClient {
     private let usageURL = URL(string: "https://api.anthropic.com/api/oauth/usage")!
-    private let refreshURL = URL(string: "https://platform.claude.com/v1/oauth/token")!
-    private let clientId = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 
     struct OAuthCredentials: Codable {
         var claudeAiOauth: OAuthToken
@@ -46,47 +50,9 @@ final class APIClient {
         }
     }
 
-    private struct TokenRefreshResponse: Decodable {
-        let accessToken: String
-        let refreshToken: String?
-        let expiresIn: Int
-
-        enum CodingKeys: String, CodingKey {
-            case accessToken = "access_token"
-            case refreshToken = "refresh_token"
-            case expiresIn = "expires_in"
-        }
-    }
-
     func fetchUsage() async throws -> UsageAPIResponse {
-        let token = try await getAccessToken()
-        let result = try await performUsageRequest(token: token)
+        let token = try getAccessToken()
 
-        switch result {
-        case .success(let response):
-            return response
-        case .rateLimited:
-            // Rate limit is per access token — refresh to get a new rate limit window
-            print("⚠️ Rate limited, refreshing token to get new rate limit window...")
-            let credentials = try readCredentials()
-            let refreshed = try await refreshAccessToken(credentials)
-            let retryResult = try await performUsageRequest(token: refreshed.claudeAiOauth.accessToken)
-
-            switch retryResult {
-            case .success(let response):
-                return response
-            case .rateLimited(let retryAfter):
-                throw APIError.rateLimited(retryAfter: retryAfter)
-            }
-        }
-    }
-
-    private enum UsageResult {
-        case success(UsageAPIResponse)
-        case rateLimited(retryAfter: TimeInterval?)
-    }
-
-    private func performUsageRequest(token: String) async throws -> UsageResult {
         var request = URLRequest(url: usageURL, cachePolicy: .reloadIgnoringLocalCacheData)
         request.httpMethod = "GET"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -102,24 +68,20 @@ final class APIClient {
         if httpResponse.statusCode == 429 {
             let retryAfter = httpResponse.value(forHTTPHeaderField: "retry-after")
                 .flatMap { TimeInterval($0) }
-            return .rateLimited(retryAfter: retryAfter)
+            throw APIError.rateLimited(retryAfter: retryAfter)
         }
 
         guard httpResponse.statusCode == 200 else {
             throw APIError.httpError(httpResponse.statusCode)
         }
 
-        // Check if response is empty
         guard !data.isEmpty else {
             throw APIError.emptyResponse
         }
 
-        // Try to decode, but provide better error context
         do {
-            let decoded = try JSONDecoder().decode(UsageAPIResponse.self, from: data)
-            return .success(decoded)
+            return try JSONDecoder().decode(UsageAPIResponse.self, from: data)
         } catch {
-            // Log raw response for debugging
             if let rawString = String(data: data, encoding: .utf8) {
                 print("⚠️ Failed to decode API response. Raw data: \(rawString)")
             }
@@ -127,13 +89,13 @@ final class APIClient {
         }
     }
 
-    private func getAccessToken() async throws -> String {
-        var credentials = try readCredentials()
+    private func getAccessToken() throws -> String {
+        let credentials = try readCredentials()
 
         let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
         let bufferMs: Int64 = 60_000
         if credentials.claudeAiOauth.expiresAt - bufferMs <= nowMs {
-            credentials = try await refreshAccessToken(credentials)
+            throw APIError.tokenExpired
         }
 
         return credentials.claudeAiOauth.accessToken
@@ -161,69 +123,11 @@ final class APIClient {
             throw APIError.noCredentials
         }
 
-        // Try to decode credentials with better error handling
         do {
             return try JSONDecoder().decode(OAuthCredentials.self, from: Data(json.utf8))
         } catch {
             print("⚠️ Failed to decode credentials from Keychain. Raw data: \(json)")
             throw APIError.corruptedCredentials
-        }
-    }
-
-    private func refreshAccessToken(_ credentials: OAuthCredentials) async throws -> OAuthCredentials {
-        var request = URLRequest(url: refreshURL)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        let body: [String: String] = [
-            "grant_type": "refresh_token",
-            "refresh_token": credentials.claudeAiOauth.refreshToken,
-            "client_id": clientId,
-        ]
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            throw APIError.tokenRefreshFailed
-        }
-
-        let tokenResponse = try JSONDecoder().decode(TokenRefreshResponse.self, from: data)
-
-        var updated = credentials
-        updated.claudeAiOauth.accessToken = tokenResponse.accessToken
-        updated.claudeAiOauth.expiresAt = Int64(Date().timeIntervalSince1970 * 1000) + Int64(tokenResponse.expiresIn) * 1000
-        if let newRefresh = tokenResponse.refreshToken {
-            updated.claudeAiOauth.refreshToken = newRefresh
-        }
-
-        try saveCredentials(updated)
-        return updated
-    }
-
-    private func saveCredentials(_ credentials: OAuthCredentials) throws {
-        let encoder = JSONEncoder()
-        let data = try encoder.encode(credentials)
-        guard let json = String(data: data, encoding: .utf8) else { return }
-
-        let deleteProcess = Process()
-        deleteProcess.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-        deleteProcess.arguments = ["delete-generic-password", "-s", "Claude Code-credentials"]
-        deleteProcess.standardOutput = Pipe()
-        deleteProcess.standardError = Pipe()
-        try? deleteProcess.run()
-        deleteProcess.waitUntilExit()
-
-        let addProcess = Process()
-        addProcess.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-        addProcess.arguments = ["add-generic-password", "-s", "Claude Code-credentials", "-w", json]
-        addProcess.standardOutput = Pipe()
-        addProcess.standardError = Pipe()
-        try addProcess.run()
-        addProcess.waitUntilExit()
-
-        guard addProcess.terminationStatus == 0 else {
-            throw APIError.keychainWriteFailed
         }
     }
 
@@ -234,8 +138,7 @@ final class APIClient {
         case emptyResponse
         case httpError(Int)
         case rateLimited(retryAfter: TimeInterval?)
-        case tokenRefreshFailed
-        case keychainWriteFailed
+        case tokenExpired
 
         var errorDescription: String? {
             switch self {
@@ -247,10 +150,8 @@ final class APIClient {
                 return "Invalid response from API."
             case .emptyResponse:
                 return "API returned empty response. Please try again later."
-            case .httpError(401):
+            case .httpError(401), .httpError(403):
                 return "Authentication failed. Run 'claude' in terminal to refresh your credentials."
-            case .httpError(403):
-                return "Access denied. Check your Claude subscription status."
             case .httpError(429):
                 return "Rate limited. Try again in a moment."
             case .httpError(let code):
@@ -260,10 +161,8 @@ final class APIClient {
                     return "Rate limited. Retrying in \(Int(seconds))s."
                 }
                 return "Rate limited. Try again in a moment."
-            case .tokenRefreshFailed:
-                return "Failed to refresh token. Run 'claude' in terminal to re-authenticate."
-            case .keychainWriteFailed:
-                return "Failed to update credentials in Keychain."
+            case .tokenExpired:
+                return "Token expired — use Claude Code to refresh."
             }
         }
     }
