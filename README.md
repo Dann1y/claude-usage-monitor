@@ -1,5 +1,7 @@
 # Claude Usage Monitor
 
+[한국어](README_KO.md)
+
 <img width="376" height="328" alt="image" src="https://github.com/user-attachments/assets/eaa3dc93-b4a1-496d-a7dc-f7e5909d716e" />
 
 A lightweight macOS menu bar app that shows your Claude (claude.ai) usage in real time.
@@ -68,21 +70,22 @@ make uninstall
 
 ## How It Works
 
-1. Reads your Claude Code OAuth token from the macOS Keychain (`Claude Code-credentials`)
-2. Polls the Anthropic usage API (`https://api.anthropic.com/api/oauth/usage`) at the configured interval
-3. Watches `~/.claude/projects` for file changes and triggers an extra refresh when activity is detected
+1. Reads your Claude Code OAuth token from the macOS Keychain in **read-only mode** (`Claude Code-credentials`) — never writes to the Keychain, so it won't interfere with Claude Code CLI
+2. Fetches usage data from the Anthropic API on-demand when you open the popover, with a background refresh every 30 minutes
+3. Caches usage data locally so the app stays responsive even when the API is unavailable or the token has expired
 
 **No API keys or manual configuration required!** — it uses the same credentials that Claude Code CLI stores automatically.
 
 ## Features
 
 - Live usage percentage in the menu bar with color-coded icon (green / orange / red)
-- 5-hour sliding window utilization
+- 5-hour sliding window utilization with reset countdown
 - 7-day weekly utilization with per-model breakdown (Opus, Sonnet)
-- Reset countdown timers
-- Configurable refresh interval (1min / 2min / 5min)
+- On-demand refresh when opening the popover (30s cooldown)
+- Background polling every 30 minutes to stay up-to-date
+- Local disk cache for persistent data across app restarts
+- Graceful handling of expired tokens with cached data fallback
 - Launch at login support
-- Auto-refresh on local Claude file changes
 - Automatic update notifications via GitHub Releases (checks every 24h)
 
 ## Prerequisites
