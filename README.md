@@ -79,9 +79,11 @@ make uninstall
 
 ## Features
 
-- Live usage percentage in the menu bar with color-coded icon (green / orange / red)
-- 5-hour sliding window utilization with reset countdown
-- 7-day weekly utilization with per-model breakdown (Opus, Sonnet)
+- Weekly plan usage in the menu bar with color-coded icon (green / orange / red) — Claude now meters usage per week rather than per 5-hour window
+- Pace tracking: a marker on the weekly bar shows how much of the week has passed, so you can tell at a glance whether you're burning faster than the week allows, plus a per-day budget for the remaining days
+- Per-model weekly caps (e.g. Fable) read from the API's `limits` list, so new model caps show up without an app update
+- "This week by app" breakdown (Claude Code / Chats / Cowork)
+- Extra usage spend when enabled, and the 5-hour window if your plan still has one
 - On-demand refresh when opening the popover (30s cooldown)
 - Background polling every 30 minutes to stay up-to-date
 - Automatic OAuth token refresh — works even if you only use Claude Desktop and never open a terminal

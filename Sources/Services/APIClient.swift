@@ -6,6 +6,12 @@ struct UsageAPIResponse: Codable {
     let sevenDayOpus: WindowData?
     let sevenDaySonnet: WindowData?
     let sevenDayClaudeDesign: WindowData?
+    /// Unified list of plan limits (weekly overall + per-model caps).
+    let limits: [LimitData]?
+    let weeklyScopedShares: [ScopedShare]?
+    /// Where this week's usage went (Claude Code, Chats, Cowork, ...).
+    let sevenDayBreakdown: Breakdown?
+    let spend: Spend?
 
     enum CodingKeys: String, CodingKey {
         case fiveHour = "five_hour"
@@ -14,6 +20,25 @@ struct UsageAPIResponse: Codable {
         case sevenDaySonnet = "seven_day_sonnet"
         // Claude Design is named "omelette" in the API for historical reasons.
         case sevenDayClaudeDesign = "seven_day_omelette"
+        case limits
+        case weeklyScopedShares = "weekly_scoped_shares"
+        case sevenDayBreakdown = "seven_day_breakdown"
+        case spend
+    }
+
+    // Every field is decoded leniently: the endpoint is undocumented and keeps
+    // growing, so one field changing shape must never break the whole popover.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        fiveHour = try? c.decodeIfPresent(WindowData.self, forKey: .fiveHour)
+        sevenDay = try? c.decodeIfPresent(WindowData.self, forKey: .sevenDay)
+        sevenDayOpus = try? c.decodeIfPresent(WindowData.self, forKey: .sevenDayOpus)
+        sevenDaySonnet = try? c.decodeIfPresent(WindowData.self, forKey: .sevenDaySonnet)
+        sevenDayClaudeDesign = try? c.decodeIfPresent(WindowData.self, forKey: .sevenDayClaudeDesign)
+        limits = (try? c.decodeIfPresent([Lossy<LimitData>].self, forKey: .limits))?.compactMap(\.value)
+        weeklyScopedShares = (try? c.decodeIfPresent([Lossy<ScopedShare>].self, forKey: .weeklyScopedShares))?.compactMap(\.value)
+        sevenDayBreakdown = try? c.decodeIfPresent(Breakdown.self, forKey: .sevenDayBreakdown)
+        spend = try? c.decodeIfPresent(Spend.self, forKey: .spend)
     }
 
     struct WindowData: Codable {
@@ -36,6 +61,149 @@ struct UsageAPIResponse: Codable {
             try container.encode(utilization, forKey: .utilization)
             try container.encodeIfPresent(resetsAt, forKey: .resetsAt)
         }
+    }
+
+    struct LimitData: Codable {
+        let kind: String?        // "weekly_all", "weekly_scoped", ...
+        let group: String?       // "weekly", ...
+        let percent: Double?     // 0-100
+        let severity: String?    // "normal", ...
+        let resetsAt: String?
+        let scope: Scope?
+        let isActive: Bool?
+
+        enum CodingKeys: String, CodingKey {
+            case kind, group, percent, severity, scope
+            case resetsAt = "resets_at"
+            case isActive = "is_active"
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            kind = try? c.decodeIfPresent(String.self, forKey: .kind)
+            group = try? c.decodeIfPresent(String.self, forKey: .group)
+            percent = try? c.decodeIfPresent(Double.self, forKey: .percent)
+            severity = try? c.decodeIfPresent(String.self, forKey: .severity)
+            resetsAt = try? c.decodeIfPresent(String.self, forKey: .resetsAt)
+            scope = try? c.decodeIfPresent(Scope.self, forKey: .scope)
+            isActive = try? c.decodeIfPresent(Bool.self, forKey: .isActive)
+        }
+
+        struct Scope: Codable {
+            let model: Named?
+            let surface: Named?
+
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                model = try? c.decodeIfPresent(Named.self, forKey: .model)
+                surface = try? c.decodeIfPresent(Named.self, forKey: .surface)
+            }
+
+            enum CodingKeys: String, CodingKey { case model, surface }
+        }
+
+        /// Accepts either a bare string or an object with `display_name` / `id`.
+        struct Named: Codable {
+            let displayName: String?
+
+            enum CodingKeys: String, CodingKey {
+                case displayName = "display_name"
+                case id
+            }
+
+            init(from decoder: Decoder) throws {
+                if let single = try? decoder.singleValueContainer().decode(String.self) {
+                    displayName = single
+                    return
+                }
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                displayName = (try? c.decodeIfPresent(String.self, forKey: .displayName))
+                    ?? (try? c.decodeIfPresent(String.self, forKey: .id))
+            }
+
+            func encode(to encoder: Encoder) throws {
+                var c = encoder.container(keyedBy: CodingKeys.self)
+                try c.encodeIfPresent(displayName, forKey: .displayName)
+            }
+        }
+    }
+
+    struct ScopedShare: Codable {
+        let limitIndex: Int
+        let allowancePercentOfWeekly: Double?
+
+        enum CodingKeys: String, CodingKey {
+            case limitIndex = "limit_index"
+            case allowancePercentOfWeekly = "allowance_percent_of_weekly"
+        }
+    }
+
+    struct Breakdown: Codable {
+        let windowStartedAt: String?
+        let rows: [Row]
+
+        enum CodingKeys: String, CodingKey {
+            case windowStartedAt = "window_started_at"
+            case rows
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            windowStartedAt = try? c.decodeIfPresent(String.self, forKey: .windowStartedAt)
+            rows = (try? c.decodeIfPresent([Lossy<Row>].self, forKey: .rows))?.compactMap(\.value) ?? []
+        }
+
+        struct Row: Codable {
+            let key: String
+            let displayName: String
+            let percent: Double
+
+            enum CodingKeys: String, CodingKey {
+                case key, percent
+                case displayName = "display_name"
+            }
+        }
+    }
+
+    struct Spend: Codable {
+        let enabled: Bool?
+        let used: Money?
+        let limit: Money?
+        let percent: Double?
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            enabled = try? c.decodeIfPresent(Bool.self, forKey: .enabled)
+            used = try? c.decodeIfPresent(Money.self, forKey: .used)
+            limit = try? c.decodeIfPresent(Money.self, forKey: .limit)
+            percent = try? c.decodeIfPresent(Double.self, forKey: .percent)
+        }
+
+        enum CodingKeys: String, CodingKey { case enabled, used, limit, percent }
+
+        struct Money: Codable {
+            let amountMinor: Int
+            let currency: String
+            let exponent: Int
+
+            enum CodingKeys: String, CodingKey {
+                case currency, exponent
+                case amountMinor = "amount_minor"
+            }
+        }
+    }
+}
+
+/// Decodes an element if possible, otherwise yields nil instead of failing the array.
+struct Lossy<T: Codable>: Codable {
+    let value: T?
+
+    init(from decoder: Decoder) throws {
+        value = try? T(from: decoder)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        try value?.encode(to: encoder)
     }
 }
 

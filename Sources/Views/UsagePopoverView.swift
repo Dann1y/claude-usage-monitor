@@ -32,9 +32,23 @@ struct UsagePopoverView: View {
             }
 
             if let summary = calculator.summary {
-                fiveHourSection(summary.fiveHour)
-                Divider()
                 weeklySection(summary)
+
+                if !summary.scopedLimits.isEmpty || summary.fiveHour != nil {
+                    Divider()
+                    limitsSection(summary)
+                }
+
+                if !summary.breakdown.isEmpty {
+                    Divider()
+                    breakdownSection(summary.breakdown)
+                }
+
+                if let spend = summary.spend {
+                    Divider()
+                    spendSection(spend)
+                }
+
                 Divider()
                 footerInfo(summary)
             } else if calculator.isLoading {
@@ -103,9 +117,9 @@ struct UsagePopoverView: View {
 
     private var header: some View {
         HStack {
-            Image(systemName: "cloud.fill")
-                .foregroundStyle(.blue)
-            Text("Claude Usage Monitor")
+            Image(systemName: "sparkle")
+                .foregroundStyle(UsageStyle.accent)
+            Text("Claude Usage")
                 .font(.headline)
             Spacer()
             if let update = updateChecker.updateAvailable {
@@ -117,7 +131,7 @@ struct UsagePopoverView: View {
                         .foregroundStyle(.white)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
-                        .background(.blue, in: Capsule())
+                        .background(UsageStyle.accent, in: Capsule())
                 }
                 .buttonStyle(.plain)
                 .help("Update available - click to download")
@@ -125,99 +139,195 @@ struct UsagePopoverView: View {
         }
     }
 
-    private func fiveHourSection(_ window: WindowSummary) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Label("5-Hour Window", systemImage: "clock")
-                    .font(.subheadline.bold())
-                Spacer()
-                if let resetStr = window.resetsInFormatted {
-                    Text("resets in \(resetStr)")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
-            }
-
-            usageBar(percentage: window.percentage)
-        }
-    }
+    // MARK: - Weekly (primary limit)
 
     private func weeklySection(_ summary: UsageSummary) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Label("Weekly", systemImage: "calendar")
-                    .font(.subheadline.bold())
-                Spacer()
-                if let resetStr = summary.weekly.resetsInFormatted {
-                    Text("resets in \(resetStr)")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
+        let weekly = summary.weekly
+        let color = UsageStyle.color(for: weekly)
+
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Weekly limit")
+                        .font(.subheadline.bold())
+                    if let resetStr = weekly.resetsInFormatted {
+                        Text("Resets in \(resetStr)\(resetDayText(weekly.resetsAt))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
+                Spacer()
+                Text("\(Int((weekly.percentage * 100).rounded()))%")
+                    .font(.system(size: 30, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(color)
             }
 
-            usageBar(percentage: summary.weekly.percentage)
+            paceBar(percentage: weekly.percentage, elapsed: summary.weekElapsed, color: color)
 
-            // Model-specific breakdowns
-            VStack(alignment: .leading, spacing: 4) {
-                if let opus = summary.weeklyOpus {
-                    modelWeeklyRow(name: "Opus", window: opus)
+            paceCaption(weekly: weekly, elapsed: summary.weekElapsed)
+        }
+    }
+
+    private func paceBar(percentage: Double, elapsed: Double?, color: Color) -> some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(.quaternary)
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(color)
+                    .frame(width: max(0, geo.size.width * percentage))
+                if let elapsed {
+                    // Where usage "should" be if spread evenly across the week.
+                    Rectangle()
+                        .fill(.primary.opacity(0.55))
+                        .frame(width: 2, height: 18)
+                        .offset(x: min(max(geo.size.width * elapsed - 1, 0), geo.size.width - 2))
                 }
-                if let sonnet = summary.weeklySonnet {
-                    modelWeeklyRow(name: "Sonnet", window: sonnet)
-                }
-                if let design = summary.weeklyClaudeDesign {
-                    modelWeeklyRow(name: "Design", window: design)
-                }
+            }
+        }
+        .frame(height: 12)
+        .help("Marker shows how much of the week has passed")
+    }
+
+    @ViewBuilder
+    private func paceCaption(weekly: WindowSummary, elapsed: Double?) -> some View {
+        let remaining = Int((weekly.remaining * 100).rounded())
+        HStack(spacing: 4) {
+            if let elapsed {
+                let diff = weekly.percentage - elapsed
+                Image(systemName: diff > 0.05 ? "hare.fill" : "tortoise.fill")
+                    .foregroundStyle(diff > 0.05 ? Color.orange : Color.secondary)
+                Text(diff > 0.05
+                     ? "Ahead of pace · \(Int((elapsed * 100).rounded()))% of week elapsed"
+                     : "On pace · \(Int((elapsed * 100).rounded()))% of week elapsed")
+            }
+            Spacer()
+            Text("\(remaining)% left")
+                .bold()
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+
+        if let perDay = dailyBudget(weekly: weekly) {
+            Text("≈ \(perDay)% per day for the rest of the week")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+    }
+
+    private func dailyBudget(weekly: WindowSummary) -> Int? {
+        guard let resetsAt = weekly.resetsAt else { return nil }
+        let daysLeft = resetsAt.timeIntervalSinceNow / 86400
+        guard daysLeft >= 1 else { return nil }
+        return Int((weekly.remaining * 100 / daysLeft).rounded())
+    }
+
+    private func resetDayText(_ date: Date?) -> String {
+        guard let date else { return "" }
+        return " · " + date.formatted(.dateTime.weekday(.abbreviated).hour().minute())
+    }
+
+    // MARK: - Model caps & session window
+
+    private func limitsSection(_ summary: UsageSummary) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Limits")
+                .font(.caption.bold())
+                .foregroundStyle(.secondary)
+
+            ForEach(summary.scopedLimits) { limit in
+                limitRow(
+                    name: limit.name,
+                    window: limit.window,
+                    help: limit.allowanceOfWeekly.map {
+                        "\(limit.name) can use up to \(Int(($0 * 100).rounded()))% of your weekly limit"
+                    }
+                )
+            }
+
+            if let fiveHour = summary.fiveHour {
+                limitRow(name: "5-hour", window: fiveHour, help: fiveHour.resetsInFormatted.map { "Resets in \($0)" })
             }
         }
     }
 
-    private func modelWeeklyRow(name: String, window: WindowSummary) -> some View {
-        HStack(spacing: 6) {
-            Text("\(name):")
+    private func limitRow(name: String, window: WindowSummary, help: String?) -> some View {
+        let color = UsageStyle.color(for: window)
+        return HStack(spacing: 8) {
+            Text(name)
                 .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(width: 50, alignment: .leading)
+                .lineLimit(1)
+                .frame(width: 64, alignment: .leading)
 
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 3)
                         .fill(.quaternary)
                     RoundedRectangle(cornerRadius: 3)
-                        .fill(colorForPercentage(window.percentage))
+                        .fill(color)
                         .frame(width: max(0, geo.size.width * window.percentage))
                 }
             }
-            .frame(height: 8)
+            .frame(height: 6)
 
-            Text("\(Int(window.percentage * 100))%")
+            Text("\(Int((window.percentage * 100).rounded()))%")
                 .font(.caption.bold())
-                .foregroundStyle(colorForPercentage(window.percentage))
-                .frame(width: 35, alignment: .trailing)
+                .monospacedDigit()
+                .foregroundStyle(color)
+                .frame(width: 36, alignment: .trailing)
+        }
+        .help(help ?? "")
+    }
+
+    // MARK: - Where usage went
+
+    private func breakdownSection(_ shares: [UsageShare]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("This week by app")
+                .font(.caption.bold())
+                .foregroundStyle(.secondary)
+
+            GeometryReader { geo in
+                HStack(spacing: 2) {
+                    ForEach(Array(shares.enumerated()), id: \.element.id) { index, share in
+                        Rectangle()
+                            .fill(UsageStyle.segmentColor(index))
+                            .frame(width: max(2, (geo.size.width - CGFloat(shares.count - 1) * 2) * share.share))
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 3))
+            }
+            .frame(height: 6)
+
+            HStack(spacing: 10) {
+                ForEach(Array(shares.enumerated()), id: \.element.id) { index, share in
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(UsageStyle.segmentColor(index))
+                            .frame(width: 6, height: 6)
+                        Text("\(share.name) \(Int((share.share * 100).rounded()))%")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+            }
         }
     }
 
-    private func usageBar(percentage: Double) -> some View {
-        VStack(spacing: 2) {
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(.quaternary)
+    // MARK: - Extra usage
 
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(colorForPercentage(percentage))
-                        .frame(width: max(0, geo.size.width * percentage))
-                }
-            }
-            .frame(height: 12)
-
-            HStack {
-                Spacer()
-                Text("\(Int(percentage * 100))%")
-                    .font(.caption.bold())
-                    .foregroundStyle(colorForPercentage(percentage))
-            }
+    private func spendSection(_ spend: SpendSummary) -> some View {
+        HStack {
+            Label("Extra usage", systemImage: "creditcard")
+                .font(.caption)
+            Spacer()
+            Text(spend.limit.map { "\(spend.used) / \($0)" } ?? spend.used)
+                .font(.caption.bold())
+                .monospacedDigit()
         }
+        .foregroundStyle(.secondary)
     }
 
     private func footerInfo(_ summary: UsageSummary) -> some View {
@@ -253,10 +363,31 @@ struct UsagePopoverView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
     }
+}
 
-    private func colorForPercentage(_ p: Double) -> Color {
+enum UsageStyle {
+    /// Claude's coral accent.
+    static let accent = Color(red: 0.85, green: 0.47, blue: 0.34)
+
+    static func color(for window: WindowSummary) -> Color {
+        switch window.severity?.lowercased() {
+        case "critical", "exceeded", "blocked", "limited":
+            return .red
+        case "warning", "elevated", "high":
+            return window.percentage >= 0.8 ? .red : .orange
+        default:
+            return color(for: window.percentage)
+        }
+    }
+
+    static func color(for p: Double) -> Color {
         if p >= 0.8 { return .red }
         if p >= 0.5 { return .orange }
         return .green
+    }
+
+    static func segmentColor(_ index: Int) -> Color {
+        let palette: [Color] = [accent, .blue, .teal, .purple, .gray]
+        return palette[index % palette.count]
     }
 }

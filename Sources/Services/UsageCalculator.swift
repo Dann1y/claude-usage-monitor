@@ -74,7 +74,7 @@ final class UsageCalculator: ObservableObject {
                 self.tokenStatus = nil
                 self.isCachedData = false
 
-                let newSummary = self.buildSummary(from: response)
+                let newSummary = UsageSummary(response: response, lastUpdated: Date())
                 self.summary = newSummary
                 self.saveSummaryToCache(response)
                 self.isLoading = false
@@ -119,56 +119,6 @@ final class UsageCalculator: ObservableObject {
         }
     }
 
-    // MARK: - Summary Building
-
-    private func buildSummary(from response: UsageAPIResponse) -> UsageSummary {
-        let fiveHour = WindowSummary(
-            percentage: min((response.fiveHour?.utilization ?? 0) / 100.0, 1.0),
-            resetsAt: parseISO8601(response.fiveHour?.resetsAt)
-        )
-
-        let weekly = WindowSummary(
-            percentage: min((response.sevenDay?.utilization ?? 0) / 100.0, 1.0),
-            resetsAt: parseISO8601(response.sevenDay?.resetsAt)
-        )
-
-        let weeklyOpus: WindowSummary? = if let opus = response.sevenDayOpus {
-            WindowSummary(
-                percentage: min(opus.utilization / 100.0, 1.0),
-                resetsAt: parseISO8601(opus.resetsAt)
-            )
-        } else {
-            nil
-        }
-
-        let weeklySonnet: WindowSummary? = if let sonnet = response.sevenDaySonnet {
-            WindowSummary(
-                percentage: min(sonnet.utilization / 100.0, 1.0),
-                resetsAt: parseISO8601(sonnet.resetsAt)
-            )
-        } else {
-            nil
-        }
-
-        let weeklyClaudeDesign: WindowSummary? = if let design = response.sevenDayClaudeDesign {
-            WindowSummary(
-                percentage: min(design.utilization / 100.0, 1.0),
-                resetsAt: parseISO8601(design.resetsAt)
-            )
-        } else {
-            nil
-        }
-
-        return UsageSummary(
-            fiveHour: fiveHour,
-            weekly: weekly,
-            weeklyOpus: weeklyOpus,
-            weeklySonnet: weeklySonnet,
-            weeklyClaudeDesign: weeklyClaudeDesign,
-            lastUpdated: Date()
-        )
-    }
-
     // MARK: - Disk Cache
 
     private func saveSummaryToCache(_ response: UsageAPIResponse) {
@@ -185,39 +135,11 @@ final class UsageCalculator: ObservableObject {
         let cachedTimestamp = UserDefaults.standard.double(forKey: Self.cacheTimestampKey)
         let cachedDate = Date(timeIntervalSince1970: cachedTimestamp)
 
-        self.summary = UsageSummary(
-            fiveHour: WindowSummary(
-                percentage: min((response.fiveHour?.utilization ?? 0) / 100.0, 1.0),
-                resetsAt: parseISO8601(response.fiveHour?.resetsAt)
-            ),
-            weekly: WindowSummary(
-                percentage: min((response.sevenDay?.utilization ?? 0) / 100.0, 1.0),
-                resetsAt: parseISO8601(response.sevenDay?.resetsAt)
-            ),
-            weeklyOpus: response.sevenDayOpus.map {
-                WindowSummary(percentage: min($0.utilization / 100.0, 1.0), resetsAt: parseISO8601($0.resetsAt))
-            },
-            weeklySonnet: response.sevenDaySonnet.map {
-                WindowSummary(percentage: min($0.utilization / 100.0, 1.0), resetsAt: parseISO8601($0.resetsAt))
-            },
-            weeklyClaudeDesign: response.sevenDayClaudeDesign.map {
-                WindowSummary(percentage: min($0.utilization / 100.0, 1.0), resetsAt: parseISO8601($0.resetsAt))
-            },
-            lastUpdated: cachedDate
-        )
+        self.summary = UsageSummary(response: response, lastUpdated: cachedDate)
         self.isCachedData = true
     }
 
     // MARK: - Helpers
-
-    private func parseISO8601(_ str: String?) -> Date? {
-        guard let str = str else { return nil }
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = formatter.date(from: str) { return date }
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.date(from: str)
-    }
 
     private static func describeDecodingError(_ error: DecodingError) -> String {
         switch error {

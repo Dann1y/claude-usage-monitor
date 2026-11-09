@@ -31,7 +31,7 @@ struct SettingsView: View {
 
             // Info
             GroupBox("Data Source") {
-                Text("Usage data is fetched on-demand when the popover opens, with a background refresh every 30 minutes. Credentials are read from macOS Keychain.")
+                Text("Shows your weekly plan limit. Usage is fetched on-demand when the popover opens, with a background refresh every 30 minutes. Credentials are read from macOS Keychain.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

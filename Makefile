@@ -1,11 +1,13 @@
 APP_NAME = Claude Usage Monitor
-BUILD_DIR = .build/apple/Products/Release
+SWIFT_BUILD = swift build -c release --arch arm64 --arch x86_64
+# The universal output dir differs between toolchains (.build/apple vs .build/out), so ask SwiftPM.
+BUILD_DIR = $(shell $(SWIFT_BUILD) --show-bin-path 2>/dev/null)
 APP_BUNDLE = $(BUILD_DIR)/$(APP_NAME).app
 
 .PHONY: build install uninstall clean
 
 build:
-	swift build -c release --arch arm64 --arch x86_64
+	$(SWIFT_BUILD)
 	mkdir -p "$(APP_BUNDLE)/Contents/MacOS"
 	mkdir -p "$(APP_BUNDLE)/Contents/Resources"
 	cp "$(BUILD_DIR)/ClaudeUsageMonitor" "$(APP_BUNDLE)/Contents/MacOS/"
