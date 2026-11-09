@@ -56,7 +56,7 @@ final class UpdateChecker: ObservableObject {
                 if dismissed != latestVersion {
                     self.updateAvailable = UpdateInfo(
                         version: latestVersion,
-                        url: release.htmlURL
+                        url: Self.safeReleaseURL(release.htmlURL, repo: repo)
                     )
                 }
             } else {
@@ -65,6 +65,14 @@ final class UpdateChecker: ObservableObject {
         } catch {
             // Silently ignore - update check is best-effort
         }
+    }
+
+    /// Only open GitHub links; anything else falls back to the releases page.
+    private static func safeReleaseURL(_ url: URL, repo: String) -> URL {
+        if url.scheme == "https", url.host == "github.com" {
+            return url
+        }
+        return URL(string: "https://github.com/\(repo)/releases/latest")!
     }
 
     func dismissUpdate() {

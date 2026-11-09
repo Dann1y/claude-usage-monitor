@@ -307,6 +307,12 @@ final class APIClient {
     // MARK: - Keychain
 
     private func readCredentials() throws -> OAuthCredentials {
+        try decodeCredentials(readCredentialsData())
+    }
+
+    /// Raw JSON stored in the keychain item. It holds more than the Claude
+    /// token (e.g. `mcpOAuth` for MCP servers), so writes must preserve it.
+    private func readCredentialsData() throws -> Data {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
         process.arguments = ["find-generic-password", "-s", keychainService, "-w"]
@@ -316,22 +322,24 @@ final class APIClient {
         process.standardError = Pipe()
 
         try process.run()
+        // Drain before waiting so a large item can't fill the pipe and deadlock.
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
 
-        guard process.terminationStatus == 0 else {
-            throw APIError.noCredentials
-        }
-
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        guard let json = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+        guard process.terminationStatus == 0,
+              let json = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
               !json.isEmpty else {
             throw APIError.noCredentials
         }
+        return Data(json.utf8)
+    }
 
+    private func decodeCredentials(_ data: Data) throws -> OAuthCredentials {
         do {
-            return try JSONDecoder().decode(OAuthCredentials.self, from: Data(json.utf8))
+            return try JSONDecoder().decode(OAuthCredentials.self, from: data)
         } catch {
-            print("⚠️ Failed to decode credentials from Keychain. Raw data: \(json)")
+            // Never log the raw item: it contains access and refresh tokens.
+            print("⚠️ Failed to decode credentials from Keychain: \(error)")
             throw APIError.corruptedCredentials
         }
     }
@@ -375,33 +383,75 @@ final class APIClient {
         return NSUserName()
     }
 
+    /// Writes the refreshed token back while keeping every other field of the
+    /// item (MCP OAuth tokens, fields added by newer Claude Code versions).
     private func saveCredentials(_ credentials: OAuthCredentials, account: String) throws {
-        let data = try JSONEncoder().encode(credentials)
-        guard let json = String(data: data, encoding: .utf8) else {
+        // Re-read right before writing so changes Claude Code made in the
+        // meantime (e.g. a new MCP login) are not lost.
+        let current = try readCredentialsData()
+        guard var root = try JSONSerialization.jsonObject(with: current) as? [String: Any] else {
             throw APIError.keychainWriteFailed
         }
+        var oauth = root["claudeAiOauth"] as? [String: Any] ?? [:]
+        oauth["accessToken"] = credentials.claudeAiOauth.accessToken
+        oauth["refreshToken"] = credentials.claudeAiOauth.refreshToken
+        oauth["expiresAt"] = NSNumber(value: credentials.claudeAiOauth.expiresAt)
+        root["claudeAiOauth"] = oauth
+        let data = try JSONSerialization.data(withJSONObject: root, options: [.withoutEscapingSlashes])
 
-        // -U updates the (service, account) item in place if it exists, or
-        // creates it otherwise. This is atomic — there is no window where the
-        // item is missing, so the Claude Code CLI never sees the entry vanish
-        // mid-rotation (which is what caused the earlier "logout" regression).
+        try writeKeychainItem(data, account: account)
+
+        // Confirm the item now holds exactly what we meant to write.
+        guard (try? readCredentialsData()) == data else {
+            throw APIError.keychainWriteFailed
+        }
+    }
+
+    /// `add-generic-password -U` updates the (service, account) item in place
+    /// atomically, so the Claude Code CLI never sees the entry vanish.
+    ///
+    /// The secret is sent over stdin (`security -i`, hex-encoded with `-X`) so it
+    /// never appears in the process list. `security -i` splits lines longer than
+    /// ~4KB and would store a truncated value, so oversized items fall back to
+    /// passing the value as an argument.
+    private func writeKeychainItem(_ data: Data, account: String) throws {
+        let hex = data.map { String(format: "%02x", $0) }.joined()
+        let quotedService = try Self.quoteForInteractive(keychainService)
+        let quotedAccount = try Self.quoteForInteractive(account)
+        let line = "add-generic-password -U -s \(quotedService) -a \(quotedAccount) -X \(hex)\n"
+
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-        process.arguments = [
-            "add-generic-password",
-            "-U",
-            "-s", keychainService,
-            "-a", account,
-            "-w", json,
-        ]
         process.standardOutput = Pipe()
         process.standardError = Pipe()
-        try process.run()
+
+        if line.utf8.count <= 4000 {
+            let input = Pipe()
+            process.arguments = ["-i"]
+            process.standardInput = input
+            try process.run()
+            input.fileHandleForWriting.write(Data(line.utf8))
+            try input.fileHandleForWriting.close()
+        } else {
+            guard let json = String(data: data, encoding: .utf8) else {
+                throw APIError.keychainWriteFailed
+            }
+            process.arguments = ["add-generic-password", "-U", "-s", keychainService, "-a", account, "-w", json]
+            try process.run()
+        }
         process.waitUntilExit()
 
         guard process.terminationStatus == 0 else {
             throw APIError.keychainWriteFailed
         }
+    }
+
+    /// Double-quotes a value for a `security -i` command line.
+    private static func quoteForInteractive(_ value: String) throws -> String {
+        guard !value.contains("\""), !value.contains("\\"), !value.contains("\n") else {
+            throw APIError.keychainWriteFailed
+        }
+        return "\"\(value)\""
     }
 
     // MARK: - Token refresh
@@ -430,9 +480,8 @@ final class APIClient {
 
         guard let httpResponse = response as? HTTPURLResponse,
               httpResponse.statusCode == 200 else {
-            if let raw = String(data: data, encoding: .utf8), !raw.isEmpty {
-                print("⚠️ Token refresh failed: \(raw)")
-            }
+            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+            print("⚠️ Token refresh failed with HTTP \(status)")
             throw APIError.tokenRefreshFailed
         }
 
