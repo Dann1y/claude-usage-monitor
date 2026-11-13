@@ -17,9 +17,11 @@ struct UsagePopoverView: View {
                 mainContent
             }
         }
-        .onAppear {
-            calculator.recalculate(force: true)
-        }
+        // MenuBarExtra keeps this view alive between openings, so onAppear only
+        // fires the first time. Refresh every time the popover window is shown.
+        .background(WindowShownObserver {
+            calculator.recalculate()
+        })
     }
 
     private var mainContent: some View {
@@ -338,11 +340,17 @@ struct UsagePopoverView: View {
                     .foregroundStyle(.orange)
                     .lineLimit(2)
             }
-            HStack(spacing: 4) {
-                Text("Updated: \(summary.lastUpdated.formatted(.dateTime.hour().minute().second()))")
-                if calculator.isCachedData {
-                    Text("(Cached)")
-                        .foregroundStyle(.orange)
+            TimelineView(.periodic(from: .now, by: 30)) { context in
+                let age = context.date.timeIntervalSince(summary.lastUpdated)
+                HStack(spacing: 4) {
+                    Text("Updated: \(summary.lastUpdated.formatted(.dateTime.hour().minute().second()))")
+                    if age >= 10 * 60 {
+                        Text("(\(Int(age / 60)) min ago)")
+                            .foregroundStyle(.orange)
+                    } else if calculator.isCachedData {
+                        Text("(Cached)")
+                            .foregroundStyle(.orange)
+                    }
                 }
             }
             .font(.caption2)
@@ -389,5 +397,45 @@ enum UsageStyle {
     static func segmentColor(_ index: Int) -> Color {
         let palette: [Color] = [accent, .blue, .teal, .purple, .gray]
         return palette[index % palette.count]
+    }
+}
+
+/// Calls `onShow` each time the hosting window becomes key, i.e. each time the
+/// menu bar popover is opened.
+private struct WindowShownObserver: NSViewRepresentable {
+    let onShow: () -> Void
+
+    func makeNSView(context: Context) -> ObserverView {
+        let view = ObserverView()
+        view.onShow = onShow
+        return view
+    }
+
+    func updateNSView(_ nsView: ObserverView, context: Context) {
+        nsView.onShow = onShow
+    }
+
+    final class ObserverView: NSView {
+        var onShow: (() -> Void)?
+        private var token: NSObjectProtocol?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let token { NotificationCenter.default.removeObserver(token) }
+            token = nil
+            guard let window else { return }
+            token = NotificationCenter.default.addObserver(
+                forName: NSWindow.didBecomeKeyNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                self?.onShow?()
+            }
+            if window.isKeyWindow || window.isVisible { onShow?() }
+        }
+
+        deinit {
+            if let token { NotificationCenter.default.removeObserver(token) }
+        }
     }
 }

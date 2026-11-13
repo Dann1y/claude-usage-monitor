@@ -25,14 +25,16 @@ final class UsageCalculator: ObservableObject {
 
     private let apiClient = APIClient()
     private var refreshTimer: Timer?
+    private var followUpTimer: Timer?
     private var currentTask: Task<Void, Never>?
 
-    // On-demand protection: skip if last fetch was within 30 seconds
+    // On-demand protection: skip if last fetch was within 15 seconds
     private var lastFetchTime: Date?
-    private let onDemandCooldown: TimeInterval = 30
+    private let onDemandCooldown: TimeInterval = 15
 
-    // Fixed 30-minute background refresh interval
-    private let backgroundInterval: TimeInterval = 30 * 60
+    // Background refresh. Weekly limits move fast near the cap and can be
+    // reset at any time from Claude's settings, so poll every few minutes.
+    private let backgroundInterval: TimeInterval = 5 * 60
 
     // Disk cache keys
     private static let cacheKey = "cachedUsageResponse"
@@ -50,6 +52,8 @@ final class UsageCalculator: ObservableObject {
     func stop() {
         refreshTimer?.invalidate()
         refreshTimer = nil
+        followUpTimer?.invalidate()
+        followUpTimer = nil
         currentTask?.cancel()
         currentTask = nil
     }
@@ -78,6 +82,7 @@ final class UsageCalculator: ObservableObject {
                 self.summary = newSummary
                 self.saveSummaryToCache(response)
                 self.isLoading = false
+                self.scheduleFollowUp(at: newSummary.weekly.resetsAt.map { $0.addingTimeInterval(15) })
             } catch let apiError as APIClient.APIError {
                 guard !Task.isCancelled else { return }
 
@@ -86,13 +91,11 @@ final class UsageCalculator: ObservableObject {
                     self.handleTokenIssue(.expired)
                 case .httpError(401), .httpError(403):
                     self.handleTokenIssue(.authFailed)
-                case .rateLimited:
-                    // With 30-min intervals, just wait for next cycle
-                    if self.summary != nil {
-                        self.isLoading = false
-                        return
-                    }
-                    self.lastError = apiError.localizedDescription
+                case .rateLimited(let retryAfter):
+                    // Say so instead of silently showing old numbers, and try again soon.
+                    let delay = min(max(retryAfter ?? 60, 30), self.backgroundInterval)
+                    self.lastError = "Rate limited — retrying in \(Int(delay))s"
+                    self.scheduleFollowUp(at: Date().addingTimeInterval(delay))
                 default:
                     self.lastError = apiError.localizedDescription
                 }
@@ -157,6 +160,22 @@ final class UsageCalculator: ObservableObject {
         @unknown default:
             return error.localizedDescription
         }
+    }
+
+    /// One-shot refresh: right after the weekly window resets, or after a rate-limit back-off.
+    /// Only the earliest pending follow-up is kept.
+    private func scheduleFollowUp(at date: Date?) {
+        guard let date, date > Date(), date.timeIntervalSinceNow < backgroundInterval * 2 else { return }
+        if let pending = followUpTimer?.fireDate, pending > Date(), pending <= date { return }
+        followUpTimer?.invalidate()
+        let timer = Timer(fire: date, interval: 0, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                self?.followUpTimer = nil
+                self?.recalculate(force: true)
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        followUpTimer = timer
     }
 
     private func setupTimer() {
