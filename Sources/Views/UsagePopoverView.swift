@@ -3,6 +3,7 @@ import SwiftUI
 struct UsagePopoverView: View {
     @ObservedObject var calculator: UsageCalculator
     @ObservedObject var updateChecker: UpdateChecker
+    @ObservedObject var costTracker: APICostTracker
     @State private var showSettings = false
 
     var body: some View {
@@ -21,6 +22,7 @@ struct UsagePopoverView: View {
         // fires the first time. Refresh every time the popover window is shown.
         .background(WindowShownObserver {
             calculator.recalculate()
+            costTracker.refresh()
         })
     }
 
@@ -49,6 +51,11 @@ struct UsagePopoverView: View {
                 if let spend = summary.spend {
                     Divider()
                     spendSection(spend)
+                }
+
+                if !costTracker.months.isEmpty || costTracker.isScanning {
+                    Divider()
+                    apiValueSection
                 }
 
                 Divider()
@@ -316,6 +323,80 @@ struct UsagePopoverView: View {
                 }
             }
         }
+    }
+
+    // MARK: - API-equivalent cost
+
+    private var apiValueSection: some View {
+        let months = Array(costTracker.months.prefix(6))
+        let maxCost = max(months.map(\.cost).max() ?? 0, 1)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("API value by month")
+                    .font(.caption.bold())
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if costTracker.isScanning {
+                    ProgressView()
+                        .controlSize(.mini)
+                }
+            }
+            .help("What Claude Code on this Mac would have cost at Anthropic API list prices")
+
+            Text("Claude Code on this Mac, at API list prices")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+
+            if months.isEmpty {
+                Text("Reading Claude Code logs…")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+
+            ForEach(Array(months.enumerated()), id: \.element.id) { index, month in
+                HStack(spacing: 8) {
+                    Text(monthLabel(month.start, current: index == 0 && isCurrentMonth(month.start)))
+                        .font(.caption)
+                        .lineLimit(1)
+                        .frame(width: 64, alignment: .leading)
+
+                    GeometryReader { geo in
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(UsageStyle.accent.opacity(index == 0 ? 0.9 : 0.5))
+                            .frame(width: max(2, geo.size.width * month.cost / maxCost))
+                    }
+                    .frame(height: 6)
+
+                    Text(formatUSD(month.cost))
+                        .font(.caption.bold())
+                        .monospacedDigit()
+                        .frame(width: 64, alignment: .trailing)
+                }
+            }
+
+            if !costTracker.unpricedModels.isEmpty {
+                Text("Not counted (no price yet): \(costTracker.unpricedModels.joined(separator: ", "))")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(2)
+            }
+        }
+    }
+
+    private func isCurrentMonth(_ date: Date) -> Bool {
+        Calendar.current.isDate(date, equalTo: Date(), toGranularity: .month)
+    }
+
+    private func monthLabel(_ date: Date, current: Bool) -> String {
+        if current { return "This month" }
+        let sameYear = Calendar.current.isDate(date, equalTo: Date(), toGranularity: .year)
+        return sameYear
+            ? date.formatted(.dateTime.month(.abbreviated))
+            : date.formatted(.dateTime.month(.abbreviated).year(.twoDigits))
+    }
+
+    private func formatUSD(_ value: Double) -> String {
+        value.formatted(.currency(code: "USD").precision(.fractionLength(value >= 100 ? 0 : 2)))
     }
 
     // MARK: - Extra usage

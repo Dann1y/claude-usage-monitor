@@ -4,10 +4,11 @@ import SwiftUI
 struct ClaudeUsageMonitorApp: App {
     @StateObject private var calculator = UsageCalculator()
     @StateObject private var updateChecker = UpdateChecker()
+    @StateObject private var costTracker = APICostTracker()
 
     var body: some Scene {
         MenuBarExtra {
-            UsagePopoverView(calculator: calculator, updateChecker: updateChecker)
+            UsagePopoverView(calculator: calculator, updateChecker: updateChecker, costTracker: costTracker)
         } label: {
             menuBarLabel
         }
@@ -29,6 +30,7 @@ struct ClaudeUsageMonitorApp: App {
         }
         .onAppear {
             calculator.start()
+            costTracker.start()
             updateChecker.checkForUpdates()
         }
     }

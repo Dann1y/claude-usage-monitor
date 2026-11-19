@@ -84,7 +84,8 @@ make uninstall
 - 모델별 주간 한도 (예: Fable) — API의 `limits` 목록을 읽으므로 새 모델 한도가 생겨도 앱 업데이트 없이 표시됩니다
 - "이번 주 앱별 사용" 분포 (Claude Code / Chats / Cowork)
 - 추가 사용량(Extra usage) 결제액 표시, 요금제에 5시간 창이 남아 있으면 함께 표시
-- 팝오버 열 때 온디맨드 새로고침 (30초 쿨다운)
+- 월별 API 환산 비용: 이 맥에서 쓴 Claude Code 사용량을 Anthropic API 정가로 쳤을 때의 금액 (Claude Code 로컬 기록에서 계산)
+- 팝오버 열 때 온디맨드 새로고침 (15초 쿨다운)
 - 30분 간격 백그라운드 폴링으로 최신 상태 유지
 - OAuth 토큰 자동 갱신 — Claude Desktop만 쓰고 터미널을 열지 않아도 동작합니다
 - 앱 재시작 시에도 유지되는 로컬 디스크 캐시

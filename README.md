@@ -84,7 +84,8 @@ make uninstall
 - Per-model weekly caps (e.g. Fable) read from the API's `limits` list, so new model caps show up without an app update
 - "This week by app" breakdown (Claude Code / Chats / Cowork)
 - Extra usage spend when enabled, and the 5-hour window if your plan still has one
-- On-demand refresh when opening the popover (30s cooldown)
+- API value by month: what your Claude Code usage on this Mac would cost at Anthropic API list prices (read from Claude Code's local logs)
+- On-demand refresh when opening the popover (15s cooldown)
 - Background polling every 30 minutes to stay up-to-date
 - Automatic OAuth token refresh — works even if you only use Claude Desktop and never open a terminal
 - Local disk cache for persistent data across app restarts
